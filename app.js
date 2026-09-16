@@ -457,9 +457,10 @@
     }
   }
 
-  async function playAudioFile(source, fallback) {
-    // Meteen bij de gebruikersklik activeren, vóór eventuele laadpauzes.
-    const context = prepareAudioContext();
+  async function playAudioFile(source, fallback, shouldWarmUp = false) {
+    // Alleen volledige woorden hebben de extra opwarming nodig. Losse
+    // letters moeten zonder merkbare wachttijd reageren.
+    const context = shouldWarmUp ? prepareAudioContext() : null;
     const requestNumber = ++audioPlaybackRequest;
 
     if (activeAudio && activeAudio !== audioCache.get(source)) {
@@ -481,13 +482,17 @@
     audio.currentTime = 0;
 
     try {
-      await warmUpAudioOutputIfNeeded(context);
+      if (shouldWarmUp) {
+        await warmUpAudioOutputIfNeeded(context);
+      }
 
       // Als intussen opnieuw werd geklikt, mag deze oudere aanvraag niet
       // alsnog beginnen afspelen.
       if (requestNumber !== audioPlaybackRequest) return;
 
-      await wait(AUDIO_START_DELAY_MS);
+      if (shouldWarmUp) {
+        await wait(AUDIO_START_DELAY_MS);
+      }
       await audio.play();
       lastAudioActivityAt = Date.now();
       audio.addEventListener(
@@ -529,7 +534,7 @@
         ? selectedAudio
         : new URL(selectedAudio, DATA.baseUrl).href;
 
-      playAudioFile(resolvedAudio);
+      playAudioFile(resolvedAudio, null, key.startsWith("word:"));
       return;
     }
     function useBrowserVoice() {
@@ -549,7 +554,7 @@
         `assets/audio/woorden/${firstLetter}/${encodeURIComponent(text)}.mp3`,
         DATA.baseUrl,
       ).href;
-      playAudioFile(ownWordFile, useBrowserVoice);
+      playAudioFile(ownWordFile, useBrowserVoice, true);
       return;
     }
 
