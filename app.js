@@ -387,6 +387,49 @@
   // 4. AUDIO
   // ================================================================
 
+  // Houd audiobestanden bij in plaats van bij elke klik een tijdelijk
+  // Audio-object te maken. Vooral op smartphones kan zo'n tijdelijk object
+  // te laat laden of te vroeg worden opgeruimd, waardoor het begin wegvalt.
+  const audioCache = new Map();
+  let activeAudio = null;
+
+  function playAudioFile(source, fallback) {
+    if (activeAudio && activeAudio !== audioCache.get(source)) {
+      activeAudio.pause();
+      activeAudio.currentTime = 0;
+    }
+
+    let audio = audioCache.get(source);
+
+    if (!audio) {
+      audio = new Audio(source);
+      audio.preload = "auto";
+      audioCache.set(source, audio);
+      audio.load();
+    }
+
+    activeAudio = audio;
+    audio.pause();
+    audio.currentTime = 0;
+    audio.play().catch(() => {
+      if (audioCache.get(source) === audio) {
+        audioCache.delete(source);
+      }
+      if (fallback) fallback();
+    });
+  }
+
+  // De vaste klanken worden meteen klaargezet. Daardoor hoeft de browser bij
+  // de eerste klik niet eerst nog het bestand op te halen en te initialiseren.
+  Object.values(DATA.builtInAudio).forEach((source) => {
+    if (!source || source.startsWith("data:")) return;
+    const resolvedSource = new URL(source, DATA.baseUrl).href;
+    const audio = new Audio(resolvedSource);
+    audio.preload = "auto";
+    audioCache.set(resolvedSource, audio);
+    audio.load();
+  });
+
   function speak(text, key = text) {
     // Volgorde van voorkeur:
     // 1. een opname die de lesgever in de app toevoegde;
@@ -399,7 +442,7 @@
         ? selectedAudio
         : new URL(selectedAudio, DATA.baseUrl).href;
 
-      new Audio(resolvedAudio).play().catch(() => {});
+      playAudioFile(resolvedAudio);
       return;
     }
     function useBrowserVoice() {
@@ -419,9 +462,7 @@
         `assets/audio/woorden/${firstLetter}/${encodeURIComponent(text)}.mp3`,
         DATA.baseUrl,
       ).href;
-      const audio = new Audio(ownWordFile);
-      audio.addEventListener("error", useBrowserVoice, { once: true });
-      audio.play().catch(useBrowserVoice);
+      playAudioFile(ownWordFile, useBrowserVoice);
       return;
     }
 
